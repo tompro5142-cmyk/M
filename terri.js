@@ -1,16 +1,25 @@
-// Example entrypoint: ensures error handling and Express setup
 require('dotenv').config();
 const express = require('express');
+const path = require('path');
 const app = express();
 const pairRoutes = require('./pair');
+
+// Serve the HTML file at the root
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'pair.html'));
+});
+
+// Optional: Serve static files if you have CSS/JS/images (not needed if everything is CDN)
+app.use(express.static(__dirname));
+
+// API route (your existing code)
+app.use('/code', pairRoutes);
 
 // Basic logging middleware
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
   next();
 });
-
-app.use('/code', pairRoutes);
 
 // Global error handler
 app.use((err, req, res, next) => {
