@@ -37,7 +37,7 @@ async function uploadCredsToMega(credsPath) {
             email: MEGA_EMAIL,
             password: MEGA_PASSWORD
         }).ready;
-        console.log('Mega storage initialized.');
+        console.log('[DEBUG] Mega storage initialized.');
         if (!fs.existsSync(credsPath)) {
             throw new Error(`File not found: ${credsPath}`);
         }
@@ -46,13 +46,13 @@ async function uploadCredsToMega(credsPath) {
             name: `${randomMegaId()}.json`,
             size: fileSize
         }, fs.createReadStream(credsPath)).complete;
-        console.log('Session successfully uploaded to Mega.');
+        console.log('[DEBUG] Session successfully uploaded to Mega.');
         const fileNode = storage.files[uploadResult.nodeId];
         const megaUrl = await fileNode.link();
-        console.log(`Session Url: ${megaUrl}`);
+        console.log('[DEBUG] Session Url:', megaUrl);
         return megaUrl;
     } catch (error) {
-        console.error('Error uploading to Mega:', error);
+        console.error('[DEBUG] Error uploading to Mega:', error);
         throw error;
     }
 }
@@ -63,12 +63,11 @@ function removeFile(FilePath) {
 }
 
 function waitForFile(filePath, timeout = 5000, interval = 100) {
-    // Wait for file to exist, up to timeout ms, checking every interval ms
     return new Promise((resolve, reject) => {
         const endTime = Date.now() + timeout;
         (function checkFile() {
             if (fs.existsSync(filePath)) return resolve();
-            if (Date.now() > endTime) return reject(new Error("Timeout waiting for file"));
+            if (Date.now() > endTime) return reject(new Error("[DEBUG] Timeout waiting for file: " + filePath));
             setTimeout(checkFile, interval);
         })();
     });
@@ -79,7 +78,6 @@ router.get('/', async (req, res) => {
     let num = req.query.number;
 
     async function GIFTED_PAIR_CODE() {
-        // Ensure session folder exists
         const sessionPath = path.join(TEMP_DIR, id);
         if (!fs.existsSync(sessionPath)) fs.mkdirSync(sessionPath, { recursive: true });
 
@@ -99,7 +97,7 @@ router.get('/', async (req, res) => {
                 await delay(500);
                 num = num.replace(/[^0-9]/g, '');
                 const code = await Gifted.requestPairingCode(num);
-                console.log(`Your Code: ${code}`);
+                console.log('[DEBUG] Pairing code generated:', code);
                 if (!res.headersSent) {
                     await res.send({ code });
                 }
@@ -109,27 +107,33 @@ router.get('/', async (req, res) => {
 
             Gifted.ev.on("connection.update", async (s) => {
                 const { connection, lastDisconnect } = s;
+                console.log('[DEBUG] Connection update:', connection);
 
                 if (connection == "open") {
                     const filePath = path.join(sessionPath, 'creds.json');
+                    console.log('[DEBUG] Waiting for creds.json at', filePath);
                     try {
                         await waitForFile(filePath, 5000, 100);
+                        console.log('[DEBUG] creds.json exists.');
                     } catch (e) {
-                        console.error("File not created in time:", filePath);
+                        console.error('[DEBUG] creds.json not created in time');
                         return;
                     }
 
                     let megaUrl = '';
                     try {
+                        console.log('[DEBUG] Uploading creds to Mega...');
                         megaUrl = await uploadCredsToMega(filePath);
+                        console.log('[DEBUG] Mega URL:', megaUrl);
                     } catch (e) {
                         megaUrl = 'Error uploading to Mega';
+                        console.error('[DEBUG] Mega upload failed:', e);
                     }
                     const sid = megaUrl && megaUrl.includes("https://mega.nz/file/")
                         ? 'Veronica~' + megaUrl.split("https://mega.nz/file/")[1]
                         : 'Error: Invalid URL';
 
-                    console.log(`Session ID: ${sid}`);
+                    console.log('[DEBUG] SID:', sid);
 
                     let sidMsg;
                     try {
@@ -153,8 +157,9 @@ router.get('/', async (req, res) => {
                                 ephemeralExpiration: 86400
                             }
                         );
+                        console.log('[DEBUG] SID message sent!');
                     } catch (e) {
-                        console.error("Failed to send SID message:", e);
+                        console.error('[DEBUG] Failed to send SID message:', e);
                     }
 
                     const GIFTED_TEXT = `
@@ -190,24 +195,27 @@ Don't Forget To Give Star⭐ To My Repo`;
                                 ephemeralExpiration: 86400
                             }
                         );
+                        console.log('[DEBUG] Info message sent!');
                     } catch (e) {
-                        console.error("Failed to send info message:", e);
+                        console.error('[DEBUG] Failed to send info message:', e);
                     }
 
                     await Gifted.ws.close();
                     await removeFile(sessionPath);
+                    console.log('[DEBUG] Session closed and temp files removed.');
                 } else if (
                     connection === "close" &&
                     lastDisconnect &&
                     lastDisconnect.error &&
                     lastDisconnect.error.output.statusCode != 401
                 ) {
+                    console.log('[DEBUG] Connection closed, retrying...');
                     await delay(5000);
                     GIFTED_PAIR_CODE();
                 }
             });
         } catch (err) {
-            console.error("Service Has Been Restarted:", err);
+            console.error('[DEBUG] Service Has Been Restarted:', err);
             await removeFile(sessionPath);
             if (!res.headersSent) {
                 await res.send({ code: "Service is Currently Unavailable" });
